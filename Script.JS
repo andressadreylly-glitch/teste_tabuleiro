@@ -1,13 +1,12 @@
-// --- CONFIGURAÇÃO DO FIREBASE ---
-// Substitua o objeto abaixo pelos dados do seu Firebase Console:
+
 const firebaseConfig = {
-  apiKey: "SEU_API_KEY",
-  authDomain: "SEU_PROJETO.firebaseapp.com",
-  databaseURL: "https://SEU_PROJETO-default-rtdb.firebaseio.com",
-  projectId: "SEU_PROJETO",
-  storageBucket: "SEU_PROJETO.appspot.com",
-  messagingSenderId: "SEU_SENDER_ID",
-  appId: "SEU_APP_ID"
+  apiKey: "AIzaSyACbYF5Zh9I6MbKIogDub7poH-6plQNIlc",
+  authDomain: "tabuleiro1-25eeb.firebaseapp.com",
+  projectId: "tabuleiro1-25eeb",
+  storageBucket: "tabuleiro1-25eeb.firebasestorage.app",
+  messagingSenderId: "1054841082588",
+  appId: "1:1054841082588:web:78f999d0c9f9822b0f5a19",
+  measurementId: "G-WJKL8TLRMR"
 };
 
 // Inicializa o Firebase
