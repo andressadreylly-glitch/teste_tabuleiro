@@ -1,20 +1,28 @@
-
+// --- CONFIGURAÇÃO DO FIREBASE ---
+// Copie estas chaves do seu Firebase Console (ou deixe como está para testar localmente)
 const firebaseConfig = {
-  apiKey: "AIzaSyACbYF5Zh9I6MbKIogDub7poH-6plQNIlc",
-  authDomain: "tabuleiro1-25eeb.firebaseapp.com",
-  projectId: "tabuleiro1-25eeb",
-  storageBucket: "tabuleiro1-25eeb.firebasestorage.app",
-  messagingSenderId: "1054841082588",
-  appId: "1:1054841082588:web:78f999d0c9f9822b0f5a19",
-  measurementId: "G-WJKL8TLRMR"
+  apiKey: "SEU_API_KEY",
+  authDomain: "SEU_PROJETO.firebaseapp.com",
+  databaseURL: "https://SEU_PROJETO-default-rtdb.firebaseio.com",
+  projectId: "SEU_PROJETO",
+  storageBucket: "SEU_PROJETO.appspot.com",
+  messagingSenderId: "SEU_SENDER_ID",
+  appId: "SEU_APP_ID"
 };
 
-// Inicializa o Firebase
-firebase.initializeApp(firebaseConfig);
-const database = firebase.database();
+// Inicializa o Firebase se a biblioteca estiver carregada no HTML
+let database = null;
+if (typeof firebase !== 'undefined') {
+  try {
+    firebase.initializeApp(firebaseConfig);
+    database = firebase.database();
+  } catch (e) {
+    console.warn("Firebase não inicializado ou chaves pendentes. Rodando em modo local.");
+  }
+}
 
 let currentRoomRef = null;
-let isRemoteUpdate = false; // Evita loops infinitos de re-sincronização
+let isRemoteUpdate = false;
 
 // Estado do Tabuleiro
 const gameState = {
@@ -65,81 +73,6 @@ function snapToGrid(coord, sizeInCells = 1) {
   const gridCell = Math.floor(coord / gameState.cellSize);
   return gridCell * gameState.cellSize + cellCenterOffset;
 }
-
-// --- INTEGRAÇÃO COM FIREBASE ---
-
-function syncToFirebase() {
-  if (!currentRoomRef || isRemoteUpdate) return;
-
-  // Monta objeto serializável
-  const dataToSave = {
-    gridSize: gameState.gridSize,
-    bgImageDataUrl: gameState.bgImageDataUrl || null,
-    drawings: gameState.drawings,
-    tokens: gameState.tokens.map(t => ({
-      id: t.id,
-      name: t.name,
-      color: t.color,
-      size: t.size,
-      x: t.x,
-      y: t.y,
-      imageDataUrl: t.imageDataUrl || null
-    }))
-  };
-
-  currentRoomRef.set(dataToSave);
-}
-
-function connectToRoom(roomId) {
-  if (currentRoomRef) {
-    currentRoomRef.off(); // Remove ouvintes anteriores
-  }
-
-  currentRoomRef = database.ref('rooms/' + roomId);
-  document.getElementById('room-status').innerText = `Status: Conectado (${roomId})`;
-
-  currentRoomRef.on('value', (snapshot) => {
-    const data = snapshot.val();
-    if (!data) return;
-
-    isRemoteUpdate = true;
-
-    gameState.gridSize = data.gridSize || 20;
-    inputGridSize.value = gameState.gridSize;
-    gameState.drawings = data.drawings || [];
-
-    // Carregar Imagem do Mapa se mudou
-    if (data.bgImageDataUrl !== gameState.bgImageDataUrl) {
-      gameState.bgImageDataUrl = data.bgImageDataUrl;
-      if (gameState.bgImageDataUrl) {
-        const img = new Image();
-        img.onload = () => { gameState.bgImage = img; render(); };
-        img.src = gameState.bgImageDataUrl;
-      } else {
-        gameState.bgImage = null;
-      }
-    }
-
-    // Carregar Tokens
-    const remoteTokens = data.tokens || [];
-    gameState.tokens = remoteTokens.map(rt => {
-      let imageObj = null;
-      if (rt.imageDataUrl) {
-        imageObj = new Image();
-        imageObj.src = rt.imageDataUrl;
-      }
-      return { ...rt, imageObj };
-    });
-
-    render();
-    isRemoteUpdate = false;
-  });
-}
-
-document.getElementById('btn-connect').addEventListener('click', () => {
-  const roomId = document.getElementById('room-id').value.trim() || 'default-room';
-  connectToRoom(roomId);
-});
 
 // --- RENDERIZAÇÃO ---
 function render() {
@@ -237,34 +170,9 @@ function drawTokens() {
   });
 }
 
-// --- MANIPULAÇÃO DE EVENTOS ---
+// --- EVENTOS DE INTERAÇÃO E BOTÕES ---
 
-document.getElementById('input-bg-image').addEventListener('change', (e) => {
-  const file = e.target.files[0];
-  if (file) {
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      gameState.bgImageDataUrl = event.target.result;
-      const img = new Image();
-      img.onload = () => {
-        gameState.bgImage = img;
-        render();
-        syncToFirebase();
-      };
-      img.src = gameState.bgImageDataUrl;
-    };
-    reader.readAsDataURL(file);
-  }
-});
-
-document.getElementById('btn-remove-bg').addEventListener('click', () => {
-  gameState.bgImage = null;
-  gameState.bgImageDataUrl = null;
-  document.getElementById('input-bg-image').value = '';
-  render();
-  syncToFirebase();
-});
-
+// Adicionar Token
 document.getElementById('btn-add-token').addEventListener('click', () => {
   const name = document.getElementById('token-name').value.trim() || 'Heroi ' + (gameState.tokens.length + 1);
   const color = document.getElementById('token-color').value;
@@ -284,7 +192,6 @@ document.getElementById('btn-add-token').addEventListener('click', () => {
     };
     gameState.tokens.push(token);
     render();
-    syncToFirebase();
   };
 
   if (imageInput.files && imageInput.files[0]) {
@@ -301,47 +208,50 @@ document.getElementById('btn-add-token').addEventListener('click', () => {
   }
 });
 
-// Rolador de Dados com Sincronismo do Chat
+// Fundo Personalizado
+document.getElementById('input-bg-image').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (file) {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      gameState.bgImageDataUrl = event.target.result;
+      const img = new Image();
+      img.onload = () => {
+        gameState.bgImage = img;
+        render();
+      };
+      img.src = gameState.bgImageDataUrl;
+    };
+    reader.readAsDataURL(file);
+  }
+});
+
+document.getElementById('btn-remove-bg').addEventListener('click', () => {
+  gameState.bgImage = null;
+  gameState.bgImageDataUrl = null;
+  document.getElementById('input-bg-image').value = '';
+  render();
+});
+
+// Rolador de Dados
 document.querySelectorAll('.dice-btn').forEach(button => {
   button.addEventListener('click', (e) => {
     const sides = parseInt(e.target.dataset.dice);
     const result = Math.floor(Math.random() * sides) + 1;
     
-    if (currentRoomRef) {
-      database.ref('rooms/' + document.getElementById('room-id').value + '/rolls').push({
-        dice: sides,
-        result: result,
-        timestamp: Date.now()
-      });
-    } else {
-      addDiceLogEntry(sides, result);
-    }
+    const diceLog = document.getElementById('dice-log');
+    const entry = document.createElement('div');
+    entry.innerHTML = `<strong>d${sides}:</strong> tirou <b style="color: #8257e5;">${result}</b>`;
+    diceLog.prepend(entry);
   });
 });
 
-function addDiceLogEntry(sides, result) {
-  const diceLog = document.getElementById('dice-log');
-  const entry = document.createElement('div');
-  entry.innerHTML = `<strong>d${sides}:</strong> tirou <b style="color: #8257e5;">${result}</b>`;
-  diceLog.prepend(entry);
-}
-
-// Ouvir rolagens de dados remotas no Firebase
-function listenToDiceRolls(roomId) {
-  database.ref('rooms/' + roomId + '/rolls').limitToLast(10).on('child_added', (snapshot) => {
-    const roll = snapshot.val();
-    if (roll) {
-      addDiceLogEntry(roll.dice, roll.result);
-    }
-  });
-}
-
+// Ferramentas e Configurações
 wrapper.addEventListener('contextmenu', (e) => e.preventDefault());
 
 inputGridSize.addEventListener('change', (e) => {
   gameState.gridSize = Math.max(1, parseInt(e.target.value) || 20);
   render();
-  syncToFirebase();
 });
 
 document.getElementById('tool-select').addEventListener('click', (e) => {
@@ -359,13 +269,13 @@ document.getElementById('tool-draw').addEventListener('click', (e) => {
 document.getElementById('btn-clear-drawings').addEventListener('click', () => {
   gameState.drawings = [];
   render();
-  syncToFirebase();
 });
 
 document.getElementById('btn-zoom-in').addEventListener('click', () => { camera.zoom *= 1.2; render(); });
 document.getElementById('btn-zoom-out').addEventListener('click', () => { camera.zoom /= 1.2; render(); });
 document.getElementById('btn-zoom-reset').addEventListener('click', () => { camera.zoom = 1; camera.x = 0; camera.y = 0; render(); });
 
+// Eventos do Mouse no Canvas
 wrapper.addEventListener('mousedown', (e) => {
   const worldPos = screenToWorld(e.clientX, e.clientY);
 
@@ -415,11 +325,6 @@ wrapper.addEventListener('mouseup', () => {
     draggedToken.y = snapToGrid(draggedToken.y, draggedToken.size);
     draggedToken = null;
     render();
-    syncToFirebase();
-  }
-  
-  if (isDrawing) {
-    syncToFirebase();
   }
 
   camera.isPanning = false;
@@ -435,7 +340,5 @@ wrapper.addEventListener('wheel', (e) => {
   render();
 }, { passive: false });
 
-// Conecta automaticamente à sala padrão inicial
-connectToRoom('sala-1');
-listenToDiceRolls('sala-1');
+// Inicialização Inicial
 resizeCanvas();
