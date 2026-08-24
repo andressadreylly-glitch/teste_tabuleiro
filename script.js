@@ -14,11 +14,12 @@ if (typeof firebase !== 'undefined') {
   try {
     firebase.initializeApp(firebaseConfig);
     database = firebase.database();
-  } catch(e) {}
+  } catch(e) {
+    console.error("Erro ao inicializar Firebase:", e);
+  }
 }
 
 let currentRoomRef = null;
-let isRemoteUpdate = false;
 
 const gameState = {
   gridSize: 20,
@@ -89,6 +90,7 @@ function render() {
   ctx.translate(camera.x, camera.y);
   ctx.scale(camera.zoom, camera.zoom);
 
+  // Desenhando Mapa de Fundo
   if (gameState.bgImage) {
     const size = gameState.gridSize * gameState.cellSize;
     ctx.drawImage(gameState.bgImage, 0, 0, size, size);
@@ -115,26 +117,31 @@ function render() {
     ctx.stroke();
   });
 
-  // Tokens
+  // Renderização de Tokens com Suporte a Imagem
   gameState.tokens.forEach(token => {
     const radius = (token.size * gameState.cellSize) / 2 - 2;
     ctx.save();
-    ctx.beginPath();
-    ctx.arc(token.x, token.y, radius, 0, Math.PI * 2);
+    
     if (token.imageObj) {
+      ctx.beginPath();
+      ctx.arc(token.x, token.y, radius, 0, Math.PI * 2);
       ctx.clip();
       ctx.drawImage(token.imageObj, token.x - radius, token.y - radius, radius * 2, radius * 2);
       ctx.restore();
+      
       ctx.beginPath();
       ctx.arc(token.x, token.y, radius, 0, Math.PI * 2);
       ctx.strokeStyle = token.color;
       ctx.lineWidth = 4;
       ctx.stroke();
     } else {
+      ctx.beginPath();
+      ctx.arc(token.x, token.y, radius, 0, Math.PI * 2);
       ctx.fillStyle = token.color;
       ctx.fill();
       ctx.restore();
     }
+
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 12px sans-serif';
     ctx.textAlign = 'center';
@@ -170,7 +177,6 @@ wrapper.addEventListener('touchstart', (e) => {
       gameState.drawings.push(currentPath);
     }
   } else if (e.touches.length === 2) {
-    // Pinch to Zoom
     camera.isPanning = false;
     draggedToken = null;
     isDrawing = false;
@@ -279,7 +285,7 @@ wrapper.addEventListener('wheel', (e) => {
   render();
 }, { passive: false });
 
-// --- OUTROS BOTÕES E FERRAMENTAS ---
+// --- FERRAMENTAS E CONTROLES DE ZOOM ---
 document.getElementById('btn-zoom-in').onclick = () => { camera.zoom *= 1.2; render(); };
 document.getElementById('btn-zoom-out').onclick = () => { camera.zoom /= 1.2; render(); };
 document.getElementById('btn-zoom-reset').onclick = () => { camera.zoom = 1; camera.x = 0; camera.y = 0; render(); };
@@ -296,18 +302,89 @@ document.getElementById('tool-draw').onclick = (e) => {
   e.target.classList.add('active');
 };
 
+document.getElementById('btn-clear-drawings').onclick = () => {
+  gameState.drawings = [];
+  render();
+};
+
+// --- CARREGAMENTO DE IMAGEM DO MAPA DE FUNDO ---
+document.getElementById('input-bg-image').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = (event) => {
+    const img = new Image();
+    img.onload = () => {
+      gameState.bgImage = img;
+      gameState.bgImageDataUrl = event.target.result;
+      render();
+    };
+    img.src = event.target.result;
+  };
+  reader.readAsDataURL(file);
+});
+
+document.getElementById('btn-remove-bg').onclick = () => {
+  gameState.bgImage = null;
+  gameState.bgImageDataUrl = null;
+  document.getElementById('input-bg-image').value = '';
+  render();
+};
+
+document.getElementById('input-grid-size').addEventListener('change', (e) => {
+  gameState.gridSize = parseInt(e.target.value) || 20;
+  render();
+});
+
+// --- CRIAÇÃO DE TOKEN COM IMAGEM ---
 document.getElementById('btn-add-token').onclick = () => {
   const name = document.getElementById('token-name').value || 'Token';
   const color = document.getElementById('token-color').value;
   const size = parseInt(document.getElementById('token-size').value) || 1;
-  
-  gameState.tokens.push({
-    id: Date.now(),
-    name, color, size,
-    x: snapToGrid(gameState.cellSize, size),
-    y: snapToGrid(gameState.cellSize, size)
-  });
-  render();
+  const imageInput = document.getElementById('token-image');
+  const file = imageInput.files[0];
+
+  const createTokenObj = (imageObj = null) => {
+    gameState.tokens.push({
+      id: Date.now(),
+      name,
+      color,
+      size,
+      imageObj,
+      x: snapToGrid(gameState.cellSize, size),
+      y: snapToGrid(gameState.cellSize, size)
+    });
+    
+    document.getElementById('token-name').value = '';
+    imageInput.value = '';
+    render();
+  };
+
+  if (file) {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        createTokenObj(img);
+      };
+      img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
+  } else {
+    createTokenObj(null);
+  }
 };
 
+// --- ROLADOR DE DADOS ---
+document.querySelectorAll('.dice-btn').forEach(btn => {
+  btn.onclick = () => {
+    const faces = parseInt(btn.dataset.dice);
+    const result = Math.floor(Math.random() * faces) + 1;
+    const log = document.getElementById('dice-log');
+    log.innerHTML = `<div>🎲 d${faces}: <strong>${result}</strong></div>` + log.innerHTML;
+  };
+});
+
+// Inicialização
 resizeCanvas();
