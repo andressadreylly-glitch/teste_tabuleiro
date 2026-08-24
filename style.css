@@ -1,0 +1,189 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  user-select: none;
+}
+
+body.dark-theme {
+  background-color: #121214;
+  color: #e1e1e6;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  overflow: hidden;
+  height: 100vh;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.top-bar {
+  height: 50px;
+  background: #1e1e24;
+  border-bottom: 1px solid #323238;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  z-index: 10;
+}
+
+.brand {
+  font-weight: bold;
+  font-size: 1.1rem;
+}
+
+.top-controls button {
+  width: auto;
+  padding: 5px 12px;
+  margin-left: 5px;
+  background: #29292e;
+}
+
+.main-container {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* Sidebar */
+.sidebar {
+  width: 280px;
+  background: #1e1e24;
+  border-right: 1px solid #323238;
+  padding: 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  overflow-y: auto;
+}
+
+.tool-section {
+  background: #18181c;
+  padding: 12px;
+  border-radius: 6px;
+  border: 1px solid #29292e;
+}
+
+.tool-section h3 {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  color: #8d8d99;
+  margin-bottom: 10px;
+}
+
+.tool-section label {
+  display: block;
+  font-size: 0.8rem;
+  margin-bottom: 4px;
+  color: #c4c4cc;
+}
+
+.tool-section input[type="number"],
+.tool-section input[type="text"],
+.tool-section select,
+.tool-section input[type="file"] {
+  width: 100%;
+  padding: 8px;
+  background: #121214;
+  border: 1px solid #323238;
+  color: #fff;
+  border-radius: 4px;
+  margin-bottom: 8px;
+  font-size: 0.85rem;
+}
+
+.tool-section input[type="color"] {
+  width: 100%;
+  height: 35px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  margin-bottom: 8px;
+}
+
+button {
+  width: 100%;
+  padding: 8px 12px;
+  background: #8257e5;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background 0.2s;
+  font-size: 0.85rem;
+}
+
+button:hover {
+  background: #996dff;
+}
+
+button.secondary {
+  background: #29292e;
+  color: #e1e1e6;
+}
+
+button.secondary:hover {
+  background: #323238;
+}
+
+.tool-btn {
+  background: #29292e;
+  text-align: left;
+  margin-bottom: 6px;
+}
+
+.tool-btn.active {
+  background: #8257e5;
+}
+
+/* Rolador de Dados */
+.dice-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 5px;
+  margin-bottom: 8px;
+}
+
+.dice-btn {
+  background: #29292e;
+  padding: 8px 0;
+  text-align: center;
+  font-size: 0.8rem;
+}
+
+.dice-btn:hover {
+  background: #8257e5;
+}
+
+.dice-log {
+  background: #121214;
+  border: 1px solid #323238;
+  border-radius: 4px;
+  padding: 8px;
+  max-height: 100px;
+  overflow-y: auto;
+  font-size: 0.8rem;
+  color: #a8a8b3;
+  display: flex;
+  flex-direction: column-reverse;
+}
+
+/* Area do Canvas */
+.canvas-wrapper {
+  flex: 1;
+  position: relative;
+  background: #09090a;
+  cursor: grab;
+}
+
+.canvas-wrapper:active {
+  cursor: grabbing;
+}
+
+canvas {
+  display: block;
+}
