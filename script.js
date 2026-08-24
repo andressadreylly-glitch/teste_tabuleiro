@@ -1,101 +1,196 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Mini VTT Online Responsivo</title>
-  <link rel="stylesheet" href="style.css">
+// --- FIREBASE CONFIG ---
+const firebaseConfig = {
+  apiKey: "SEU_API_KEY",
+  authDomain: "SEU_PROJETO.firebaseapp.com",
+  databaseURL: "https://SEU_PROJETO-default-rtdb.firebaseio.com",
+  projectId: "SEU_PROJETO",
+  storageBucket: "SEU_PROJETO.appspot.com",
+  messagingSenderId: "SEU_SENDER_ID",
+  appId: "SEU_APP_ID"
+};
 
-  <!-- Firebase SDKs (v9 Compat) -->
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-</head>
-<body class="dark-theme">
+let database = null;
+if (typeof firebase !== 'undefined') {
+  try {
+    firebase.initializeApp(firebaseConfig);
+    database = firebase.database();
+  } catch(e) {}
+}
 
-  <div id="app">
-    <header class="top-bar">
-      <div class="brand">🎲 Mini VTT</div>
-      <div class="top-controls">
-        <button id="btn-toggle-sidebar" class="mobile-only-btn" title="Menu">☰ Menu</button>
-        <button id="btn-zoom-in" title="Aumentar Zoom">+</button>
-        <button id="btn-zoom-reset" title="Resetar Zoom">100%</button>
-        <button id="btn-zoom-out" title="Diminuir Zoom">-</button>
-      </div>
-    </header>
+let currentRoomRef = null;
+let isRemoteUpdate = false;
 
-    <div class="main-container">
-      <aside class="sidebar" id="sidebar">
-        <div class="sidebar-header mobile-only">
-          <h3>Menu do VTT</h3>
-          <button id="btn-close-sidebar">✕</button>
-        </div>
+const gameState = {
+  gridSize: 20,
+  cellSize: 50,
+  bgImage: null,
+  bgImageDataUrl: null,
+  tokens: [],
+  drawings: []
+};
 
-        <div class="tool-section">
-          <h3>🌐 Multiplayer</h3>
-          <label for="room-id">Código da Sala:</label>
-          <input type="text" id="room-id" value="sala-1">
-          <button id="btn-connect" class="secondary">Conectar</button>
-          <span id="room-status" class="status-text">Status: Desconectado</span>
-        </div>
+const camera = {
+  x: 0,
+  y: 0,
+  zoom: 1,
+  isPanning: false,
+  startPanX: 0,
+  startPanY: 0
+};
 
-        <div class="tool-section">
-          <h3>Ferramentas</h3>
-          <div class="btn-group">
-            <button class="tool-btn active" id="tool-select">👆 Mover</button>
-            <button class="tool-btn" id="tool-draw">✏️ Desenhar</button>
-          </div>
-          <button class="tool-btn secondary" id="btn-clear-drawings" style="margin-top: 5px;">🧹 Limpar Desenhos</button>
-        </div>
+let currentTool = 'select';
+let isDrawing = false;
+let currentPath = null;
+let draggedToken = null;
+let initialPinchDistance = null;
 
-        <div class="tool-section">
-          <h3>Mapa & Grid</h3>
-          <label for="input-bg-image">Imagem do Mapa:</label>
-          <input type="file" id="input-bg-image" accept="image/*">
-          <button class="secondary" id="btn-remove-bg" style="margin-top: 5px;">❌ Remover Imagem</button>
+const canvas = document.getElementById('vtt-canvas');
+const ctx = canvas.getContext('2d');
+const wrapper = document.getElementById('canvas-wrapper');
 
-          <label for="input-grid-size" style="margin-top: 10px;">Grid (Células):</label>
-          <input type="number" id="input-grid-size" value="20" min="5" max="100">
-        </div>
+function resizeCanvas() {
+  canvas.width = wrapper.clientWidth;
+  canvas.height = wrapper.clientHeight;
+  render();
+}
+window.addEventListener('resize', resizeCanvas);
 
-        <div class="tool-section">
-          <h3>Criar Token</h3>
-          <input type="text" id="token-name" placeholder="Nome do Token">
-          <div class="flex-row">
-            <input type="color" id="token-color" value="#8257e5">
-            <select id="token-size">
-              <option value="1">1x1 (P/M)</option>
-              <option value="2">2x2 (Grande)</option>
-              <option value="3">3x3 (Enorme)</option>
-            </select>
-          </div>
-          <label for="token-image" style="margin-top: 5px;">Imagem (Opcional):</label>
-          <input type="file" id="token-image" accept="image/*">
-          <button id="btn-add-token" style="margin-top: 8px;">+ Criar Token</button>
-        </div>
+function screenToWorld(screenX, screenY) {
+  const rect = canvas.getBoundingClientRect();
+  const x = (screenX - rect.left - camera.x) / camera.zoom;
+  const y = (screenY - rect.top - camera.y) / camera.zoom;
+  return { x, y };
+}
 
-        <div class="tool-section">
-          <h3>🎲 Rolador de Dados</h3>
-          <div class="dice-grid">
-            <button class="dice-btn" data-dice="4">d4</button>
-            <button class="dice-btn" data-dice="6">d6</button>
-            <button class="dice-btn" data-dice="8">d8</button>
-            <button class="dice-btn" data-dice="10">d10</button>
-            <button class="dice-btn" data-dice="12">d12</button>
-            <button class="dice-btn" data-dice="20">d20</button>
-            <button class="dice-btn" data-dice="100">d100</button>
-          </div>
-          <div id="dice-log" class="dice-log">Histórico...</div>
-        </div>
-      </aside>
+function snapToGrid(coord, sizeInCells = 1) {
+  const cellCenterOffset = (sizeInCells * gameState.cellSize) / 2;
+  return Math.floor(coord / gameState.cellSize) * gameState.cellSize + cellCenterOffset;
+}
 
-      <div class="sidebar-overlay" id="sidebar-overlay"></div>
+// --- CONTROLE DE SIDEBAR MOBILE ---
+const sidebar = document.getElementById('sidebar');
+const overlay = document.getElementById('sidebar-overlay');
+const btnToggle = document.getElementById('btn-toggle-sidebar');
+const btnClose = document.getElementById('btn-close-sidebar');
 
-      <main class="canvas-wrapper" id="canvas-wrapper">
-        <canvas id="vtt-canvas"></canvas>
-      </main>
-    </div>
-  </div>
+function toggleSidebar() {
+  sidebar.classList.toggle('open');
+  overlay.classList.toggle('active');
+}
 
-  <script src="script.js" defer></script>
-</body>
-</html>
+btnToggle.addEventListener('click', toggleSidebar);
+if (btnClose) btnClose.addEventListener('click', toggleSidebar);
+overlay.addEventListener('click', toggleSidebar);
+
+
+// --- RENDERIZAÇÃO DOS TOKENS (Corrigido para PC e Celular) ---
+function drawTokens() {
+  gameState.tokens.forEach(token => {
+    const radius = (token.size * gameState.cellSize) / 2 - 2;
+    ctx.save();
+
+    // Se o token tem uma imagem em formato DataURL (Base64)
+    if (token.imageDataUrl) {
+      // Se o objeto de imagem ainda não existe na memória, cria um novo
+      if (!token.imageObj) {
+        token.imageObj = new Image();
+        token.imageObj.onload = () => render(); // Redesenha assim que carregar no PC
+        token.imageObj.src = token.imageDataUrl;
+      }
+
+      ctx.beginPath();
+      ctx.arc(token.x, token.y, radius, 0, Math.PI * 2);
+      ctx.clip();
+      
+      // Desenha a imagem cortada em círculo
+      if (token.imageObj.complete && token.imageObj.naturalWidth !== 0) {
+        ctx.drawImage(token.imageObj, token.x - radius, token.y - radius, radius * 2, radius * 2);
+      }
+      ctx.restore();
+
+      // Desenha a borda colorida por cima
+      ctx.beginPath();
+      ctx.arc(token.x, token.y, radius, 0, Math.PI * 2);
+      ctx.strokeStyle = token.color;
+      ctx.lineWidth = 4;
+      ctx.stroke();
+    } else {
+      // Sem imagem: desenha círculo com a cor selecionada
+      ctx.beginPath();
+      ctx.arc(token.x, token.y, radius, 0, Math.PI * 2);
+      ctx.fillStyle = token.color;
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Nome do Token
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.shadowColor = 'black';
+    ctx.shadowBlur = 4;
+    ctx.fillText(token.name, token.x, token.y - radius - 6);
+  });
+}
+
+// --- CARREGAMENTO DO MAPA DE FUNDO (PC e Celular) ---
+document.getElementById('input-bg-image').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = (event) => {
+    const dataUrl = event.target.result;
+    const img = new Image();
+    
+    img.onload = () => {
+      gameState.bgImage = img;
+      gameState.bgImageDataUrl = dataUrl;
+      render(); // Redesenha a tela no PC e Mobile
+    };
+    
+    img.src = dataUrl;
+  };
+  reader.readAsDataURL(file);
+});
+
+// --- CRIAÇÃO DE TOKEN COM IMAGEM (PC e Celular) ---
+document.getElementById('btn-add-token').onclick = () => {
+  const nameInput = document.getElementById('token-name');
+  const name = nameInput.value.trim() || 'Token';
+  const color = document.getElementById('token-color').value;
+  const size = parseInt(document.getElementById('token-size').value) || 1;
+  const imageInput = document.getElementById('token-image');
+  const file = imageInput.files[0];
+
+  const createToken = (dataUrl = null) => {
+    const newToken = {
+      id: Date.now(),
+      name: name,
+      color: color,
+      size: size,
+      imageDataUrl: dataUrl, // Salva o texto Base64
+      imageObj: null,        // Será gerado automaticamente pelo drawTokens()
+      x: snapToGrid(gameState.cellSize, size),
+      y: snapToGrid(gameState.cellSize, size)
+    };
+
+    gameState.tokens.push(newToken);
+    
+    // Limpa os campos do menu
+    nameInput.value = '';
+    imageInput.value = '';
+    
+    render();
+  };
+
+  if (file) {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      createToken(event.target.result);
+    };
+    reader.readAsDataURL(file);
+  } else {
+    createToken(null);
+  }
+};
