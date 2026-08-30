@@ -1,4 +1,6 @@
-// --- CONFIGURAÇÃO DO FIREBASE ---
+// ==========================================
+// 1. CONFIGURAÇÃO DO FIREBASE
+// ==========================================
 const firebaseConfig = {
   apiKey: "SEU_API_KEY",
   authDomain: "SEU_PROJETO.firebaseapp.com",
@@ -25,7 +27,9 @@ let currentUserRef = null;
 let currentUserId = 'user_' + Math.random().toString(36).substr(2, 9);
 let currentUserName = 'Jogador';
 
-// ESTADO DO JOGO
+// ==========================================
+// 2. ESTADO DO JOGO E CÂMERA
+// ==========================================
 const gameState = {
   gridSize: 20,
   cellSize: 50,
@@ -35,7 +39,6 @@ const gameState = {
   drawings: []
 };
 
-// CÂMERA (PAN & ZOOM)
 const camera = {
   x: 0,
   y: 0,
@@ -51,20 +54,35 @@ let currentPath = null;
 let draggedToken = null;
 let initialPinchDistance = null;
 
-// VARIÁVEIS DO MENU CONTEXTUAL E PRESSIONAR E SEGURAR
+// VARIÁVEIS DE MODAL E MENU CONTEXTUAL
 let selectedTokenForMenu = null;
 let pressTimer = null;
-const contextMenu = document.getElementById('token-context-menu');
-const ctxImageInput = document.getElementById('ctx-image-input');
+let tempImageDataUrl = null;
 
+// ELEMENTOS DA INTERFACE
 const canvas = document.getElementById('vtt-canvas');
 const ctx = canvas.getContext('2d');
 const wrapper = document.getElementById('canvas-wrapper');
 
+const contextMenu = document.getElementById('token-context-menu');
+const modalOverlay = document.getElementById('token-modal-overlay');
+
+const modalInputName = document.getElementById('modal-input-name');
+const modalInputColor = document.getElementById('modal-input-color');
+const modalInputSize = document.getElementById('modal-input-size');
+const modalInputImage = document.getElementById('modal-input-image');
+const modalPreview = document.getElementById('modal-token-preview');
+const modalPreviewName = document.getElementById('modal-preview-name');
+
+// ==========================================
+// 3. AUXILIARES DE CANVAS E CÁLCULOS
+// ==========================================
 function resizeCanvas() {
-  canvas.width = wrapper.clientWidth;
-  canvas.height = wrapper.clientHeight;
-  render();
+  if (wrapper && canvas) {
+    canvas.width = wrapper.clientWidth;
+    canvas.height = wrapper.clientHeight;
+    render();
+  }
 }
 window.addEventListener('resize', resizeCanvas);
 
@@ -80,75 +98,81 @@ function snapToGrid(coord, sizeInCells = 1) {
   return Math.floor(coord / gameState.cellSize) * gameState.cellSize + cellCenterOffset;
 }
 
-// --- CONTROLE DE SIDEBAR MOBILE ---
+// ==========================================
+// 4. SIDEBAR MOBILE
+// ==========================================
 const sidebar = document.getElementById('sidebar');
 const overlay = document.getElementById('sidebar-overlay');
 const btnToggle = document.getElementById('btn-toggle-sidebar');
 const btnClose = document.getElementById('btn-close-sidebar');
 
 function toggleSidebar() {
-  sidebar.classList.toggle('open');
-  overlay.classList.toggle('active');
+  if (sidebar && overlay) {
+    sidebar.classList.toggle('open');
+    overlay.classList.toggle('active');
+  }
 }
 
 if (btnToggle) btnToggle.addEventListener('click', toggleSidebar);
 if (btnClose) btnClose.addEventListener('click', toggleSidebar);
 if (overlay) overlay.addEventListener('click', toggleSidebar);
 
-// --- CONEXÃO COM A SALA E GERENCIAMENTO DE USUÁRIOS ---
-document.getElementById('btn-connect-room').onclick = () => {
-  if (!database) {
-    alert("Firebase não está configurado!");
-    return;
-  }
-
-  const usernameInput = document.getElementById('input-username');
-  const roomInput = document.getElementById('input-room-id');
-
-  const name = usernameInput.value.trim();
-  const roomId = roomInput.value.trim();
-
-  if (!name || !roomId) {
-    alert("Por favor, preencha seu Nome e o Código da Sala.");
-    return;
-  }
-
-  currentUserName = name;
-  
-  if (currentUserRef) {
-    currentUserRef.remove();
-  }
-
-  currentRoomRef = database.ref('rooms/' + roomId);
-  currentUserRef = currentRoomRef.child('users/' + currentUserId);
-
-  currentUserRef.set({
-    name: currentUserName,
-    joinedAt: firebase.database.ServerValue.TIMESTAMP
-  });
-
-  currentUserRef.onDisconnect().remove();
-
-  currentRoomRef.child('users').on('value', (snapshot) => {
-    const users = snapshot.val() || {};
-    updatePlayersList(users);
-  });
-
-  currentRoomRef.child('state').on('value', (snapshot) => {
-    const data = snapshot.val();
-    if (data) {
-      gameState.tokens = data.tokens || [];
-      gameState.drawings = data.drawings || [];
-      gameState.gridSize = data.gridSize || 20;
-      if (data.bgImageDataUrl && data.bgImageDataUrl !== gameState.bgImageDataUrl) {
-        loadBgImageFromUrl(data.bgImageDataUrl);
-      }
-      render();
+// ==========================================
+// 5. CONEXÃO E SINCRONIZAÇÃO EM TEMPO REAL
+// ==========================================
+const btnConnect = document.getElementById('btn-connect-room');
+if (btnConnect) {
+  btnConnect.onclick = () => {
+    if (!database) {
+      alert("Firebase não está configurado!");
+      return;
     }
-  });
 
-  alert(`Conectado à sala "${roomId}" como "${currentUserName}"!`);
-};
+    const usernameInput = document.getElementById('input-username');
+    const roomInput = document.getElementById('input-room-id');
+
+    const name = usernameInput.value.trim();
+    const roomId = roomInput.value.trim();
+
+    if (!name || !roomId) {
+      alert("Por favor, preencha seu Nome e o Código da Sala.");
+      return;
+    }
+
+    currentUserName = name;
+    
+    if (currentUserRef) currentUserRef.remove();
+
+    currentRoomRef = database.ref('rooms/' + roomId);
+    currentUserRef = currentRoomRef.child('users/' + currentUserId);
+
+    currentUserRef.set({
+      name: currentUserName,
+      joinedAt: firebase.database.ServerValue.TIMESTAMP
+    });
+
+    currentUserRef.onDisconnect().remove();
+
+    currentRoomRef.child('users').on('value', (snapshot) => {
+      updatePlayersList(snapshot.val() || {});
+    });
+
+    currentRoomRef.child('state').on('value', (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        gameState.tokens = data.tokens || [];
+        gameState.drawings = data.drawings || [];
+        gameState.gridSize = data.gridSize || 20;
+        if (data.bgImageDataUrl && data.bgImageDataUrl !== gameState.bgImageDataUrl) {
+          loadBgImageFromUrl(data.bgImageDataUrl);
+        }
+        render();
+      }
+    });
+
+    alert(`Conectado à sala "${roomId}" como "${currentUserName}"!`);
+  };
+}
 
 function updatePlayersList(users) {
   const container = document.getElementById('online-players-list');
@@ -183,8 +207,12 @@ function syncGameState() {
   }
 }
 
-// --- RENDERIZAÇÃO ---
+// ==========================================
+// 6. MOTOR DE RENDERIZAÇÃO
+// ==========================================
 function render() {
+  if (!ctx || !canvas) return;
+
   ctx.save();
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.translate(camera.x, camera.y);
@@ -271,18 +299,118 @@ function drawTokens() {
   });
 }
 
-// --- LÓGICA DO MENU CONTEXTUAL DE TOKENS ---
+// ==========================================
+// 7. MENU CONTEXTUAL E MODAL INTERATIVO
+// ==========================================
 function showContextMenu(screenX, screenY, token) {
   selectedTokenForMenu = token;
   if (!contextMenu) return;
-  contextMenu.style.left = `${screenX}px`;
-  contextMenu.style.top = `${screenY}px`;
+
+  const mouseX = Math.min(screenX, window.innerWidth - 170);
+  const mouseY = Math.min(screenY, window.innerHeight - 100);
+
+  contextMenu.style.left = `${mouseX}px`;
+  contextMenu.style.top = `${mouseY}px`;
   contextMenu.style.display = 'block';
 }
 
 function hideContextMenu() {
-  selectedTokenForMenu = null;
   if (contextMenu) contextMenu.style.display = 'none';
+}
+
+function openTokenModal() {
+  if (!selectedTokenForMenu || !modalOverlay) return;
+
+  hideContextMenu();
+  tempImageDataUrl = selectedTokenForMenu.imageDataUrl || null;
+
+  modalInputName.value = selectedTokenForMenu.name;
+  modalInputColor.value = selectedTokenForMenu.color;
+  modalInputSize.value = selectedTokenForMenu.size;
+  modalInputImage.value = '';
+
+  updateModalPreview();
+  modalOverlay.style.display = 'flex';
+}
+
+function closeTokenModal() {
+  if (modalOverlay) modalOverlay.style.display = 'none';
+  selectedTokenForMenu = null;
+  tempImageDataUrl = null;
+}
+
+function updateModalPreview() {
+  if (!modalPreview) return;
+
+  modalPreviewName.textContent = modalInputName.value || 'Token';
+  modalPreview.style.borderColor = modalInputColor.value;
+
+  if (tempImageDataUrl) {
+    modalPreview.style.backgroundImage = `url(${tempImageDataUrl})`;
+    modalPreview.style.backgroundColor = 'transparent';
+  } else {
+    modalPreview.style.backgroundImage = 'none';
+    modalPreview.style.backgroundColor = modalInputColor.value;
+  }
+}
+
+// Eventos de pré-visualização do Modal
+if (modalInputName) modalInputName.addEventListener('input', updateModalPreview);
+if (modalInputColor) modalInputColor.addEventListener('input', updateModalPreview);
+
+if (modalInputImage) {
+  modalInputImage.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        tempImageDataUrl = event.target.result;
+        updateModalPreview();
+      };
+      reader.readAsDataURL(file);
+    }
+  });
+}
+
+// Salvar dados editados no Modal
+const btnSaveModal = document.getElementById('modal-save-btn');
+if (btnSaveModal) {
+  btnSaveModal.onclick = () => {
+    if (!selectedTokenForMenu) return;
+
+    selectedTokenForMenu.name = modalInputName.value.trim() || 'Token';
+    selectedTokenForMenu.color = modalInputColor.value;
+    selectedTokenForMenu.size = parseInt(modalInputSize.value) || 1;
+
+    if (tempImageDataUrl !== selectedTokenForMenu.imageDataUrl) {
+      selectedTokenForMenu.imageDataUrl = tempImageDataUrl;
+      selectedTokenForMenu.imageObj = null;
+    }
+
+    syncGameState();
+    render();
+    closeTokenModal();
+  };
+}
+
+// Eventos dos botões do Menu Contextual e Fechar
+const btnCtxOpenModal = document.getElementById('ctx-open-modal');
+const btnModalClose = document.getElementById('modal-close-btn');
+const btnCtxDelete = document.getElementById('ctx-delete');
+
+if (btnCtxOpenModal) btnCtxOpenModal.onclick = openTokenModal;
+if (btnModalClose) btnModalClose.onclick = closeTokenModal;
+
+if (btnCtxDelete) {
+  btnCtxDelete.onclick = () => {
+    if (!selectedTokenForMenu) return;
+    if (confirm(`Deseja excluir o token "${selectedTokenForMenu.name}"?`)) {
+      gameState.tokens = gameState.tokens.filter(t => t.id !== selectedTokenForMenu.id);
+      syncGameState();
+      render();
+    }
+    hideContextMenu();
+  };
 }
 
 document.addEventListener('click', (e) => {
@@ -291,143 +419,157 @@ document.addEventListener('click', (e) => {
   }
 });
 
-// Ações do Menu Contextual
-document.getElementById('ctx-edit-name')?.addEventListener('click', () => {
-  if (!selectedTokenForMenu) return;
-  const newName = prompt('Novo nome do token:', selectedTokenForMenu.name);
-  if (newName !== null) {
-    selectedTokenForMenu.name = newName.trim() || selectedTokenForMenu.name;
-    syncGameState();
-    render();
-  }
-  hideContextMenu();
-});
+// Clique com botão direito no Canvas
+if (wrapper) {
+  wrapper.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    const worldPos = screenToWorld(e.clientX, e.clientY);
 
-document.getElementById('ctx-edit-color')?.addEventListener('click', () => {
-  if (!selectedTokenForMenu) return;
-  const newColor = prompt('Nova cor (hex ou nome em inglês):', selectedTokenForMenu.color);
-  if (newColor !== null) {
-    selectedTokenForMenu.color = newColor.trim() || selectedTokenForMenu.color;
-    syncGameState();
-    render();
-  }
-  hideContextMenu();
-});
+    for (let i = gameState.tokens.length - 1; i >= 0; i--) {
+      const t = gameState.tokens[i];
+      const radius = (t.size * gameState.cellSize) / 2;
+      if (Math.hypot(t.x - worldPos.x, t.y - worldPos.y) <= radius) {
+        showContextMenu(e.clientX, e.clientY, t);
+        return;
+      }
+    }
+    hideContextMenu();
+  });
+}
 
-document.getElementById('ctx-edit-size')?.addEventListener('click', () => {
-  if (!selectedTokenForMenu) return;
-  const newSize = prompt('Novo tamanho em células (ex: 1, 2, 3):', selectedTokenForMenu.size);
-  const parsedSize = parseInt(newSize);
-  if (!isNaN(parsedSize) && parsedSize > 0) {
-    selectedTokenForMenu.size = parsedSize;
-    syncGameState();
-    render();
-  }
-  hideContextMenu();
-});
+// ==========================================
+// 8. EVENTOS DE TOQUE (TOUCH/MOBILE)
+// ==========================================
+if (wrapper) {
+  wrapper.addEventListener('touchstart', (e) => {
+    hideContextMenu();
 
-document.getElementById('ctx-edit-image')?.addEventListener('click', () => {
-  if (!selectedTokenForMenu || !ctxImageInput) return;
-  ctxImageInput.click();
-});
+    if (e.touches.length === 1) {
+      const touch = e.touches[0];
+      const worldPos = screenToWorld(touch.clientX, touch.clientY);
 
-ctxImageInput?.addEventListener('change', (e) => {
-  const file = e.target.files[0];
-  if (file && selectedTokenForMenu) {
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      selectedTokenForMenu.imageDataUrl = event.target.result;
-      selectedTokenForMenu.imageObj = null;
+      if (currentTool === 'select') {
+        for (let i = gameState.tokens.length - 1; i >= 0; i--) {
+          const t = gameState.tokens[i];
+          const radius = (t.size * gameState.cellSize) / 2;
+          if (Math.hypot(t.x - worldPos.x, t.y - worldPos.y) <= radius) {
+            draggedToken = t;
+            
+            // Pressionar e segurar por 500ms abre o menu de edição
+            pressTimer = setTimeout(() => {
+              draggedToken = null;
+              showContextMenu(touch.clientX, touch.clientY, t);
+            }, 500);
+
+            break;
+          }
+        }
+        if (!draggedToken) {
+          camera.isPanning = true;
+          camera.startPanX = touch.clientX - camera.x;
+          camera.startPanY = touch.clientY - camera.y;
+        }
+      } else if (currentTool === 'draw') {
+        isDrawing = true;
+        currentPath = [worldPos];
+        gameState.drawings.push(currentPath);
+      }
+    } else if (e.touches.length === 2) {
+      clearTimeout(pressTimer);
+      camera.isPanning = false;
+      draggedToken = null;
+      isDrawing = false;
+      initialPinchDistance = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+    }
+  }, { passive: false });
+
+  wrapper.addEventListener('touchmove', (e) => {
+    clearTimeout(pressTimer);
+
+    if (e.touches.length === 1) {
+      const touch = e.touches[0];
+      const worldPos = screenToWorld(touch.clientX, touch.clientY);
+
+      if (camera.isPanning) {
+        camera.x = touch.clientX - camera.startPanX;
+        camera.y = touch.clientY - camera.startPanY;
+        render();
+      } else if (draggedToken) {
+        draggedToken.x = worldPos.x;
+        draggedToken.y = worldPos.y;
+        render();
+      } else if (isDrawing && currentPath) {
+        currentPath.push(worldPos);
+        render();
+      }
+    } else if (e.touches.length === 2 && initialPinchDistance) {
+      const currentDistance = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      const zoomFactor = currentDistance / initialPinchDistance;
+      camera.zoom *= zoomFactor > 1 ? 1.03 : 0.97;
+      initialPinchDistance = currentDistance;
+      render();
+    }
+  }, { passive: false });
+
+  wrapper.addEventListener('touchend', () => {
+    clearTimeout(pressTimer);
+
+    if (draggedToken) {
+      draggedToken.x = snapToGrid(draggedToken.x, draggedToken.size);
+      draggedToken.y = snapToGrid(draggedToken.y, draggedToken.size);
+      draggedToken = null;
       syncGameState();
       render();
-      hideContextMenu();
-    };
-    reader.readAsDataURL(file);
-  }
-});
-
-document.getElementById('ctx-delete')?.addEventListener('click', () => {
-  if (!selectedTokenForMenu) return;
-  if (confirm(`Deseja excluir o token "${selectedTokenForMenu.name}"?`)) {
-    gameState.tokens = gameState.tokens.filter(t => t.id !== selectedTokenForMenu.id);
-    syncGameState();
-    render();
-  }
-  hideContextMenu();
-});
-
-// Clique com botão direito (Desktop)
-wrapper.addEventListener('contextmenu', (e) => {
-  e.preventDefault();
-  const worldPos = screenToWorld(e.clientX, e.clientY);
-
-  for (let i = gameState.tokens.length - 1; i >= 0; i--) {
-    const t = gameState.tokens[i];
-    const radius = (t.size * gameState.cellSize) / 2;
-    if (Math.hypot(t.x - worldPos.x, t.y - worldPos.y) <= radius) {
-      showContextMenu(e.clientX, e.clientY, t);
-      return;
     }
-  }
-  hideContextMenu();
-});
+    if (isDrawing) {
+      syncGameState();
+    }
+    camera.isPanning = false;
+    isDrawing = false;
+    initialPinchDistance = null;
+  });
+}
 
-// --- EVENTOS TOUCH (CELULAR E TABLET) ---
-wrapper.addEventListener('touchstart', (e) => {
-  hideContextMenu();
+// ==========================================
+// 9. EVENTOS DE MOUSE (DESKTOP)
+// ==========================================
+if (wrapper) {
+  wrapper.addEventListener('mousedown', (e) => {
+    if (e.button !== 2) hideContextMenu();
 
-  if (e.touches.length === 1) {
-    const touch = e.touches[0];
-    const worldPos = screenToWorld(touch.clientX, touch.clientY);
-
-    if (currentTool === 'select') {
-      for (let i = gameState.tokens.length - 1; i >= 0; i--) {
-        const t = gameState.tokens[i];
-        const radius = (t.size * gameState.cellSize) / 2;
-        if (Math.hypot(t.x - worldPos.x, t.y - worldPos.y) <= radius) {
-          draggedToken = t;
-          
-          // Inicia o timer de Pressionar e Segurar (Long Press) no celular
-          pressTimer = setTimeout(() => {
-            draggedToken = null;
-            showContextMenu(touch.clientX, touch.clientY, t);
-          }, 600);
-
-          break;
+    const worldPos = screenToWorld(e.clientX, e.clientY);
+    if (e.button === 1 || (e.button === 0 && e.shiftKey)) {
+      camera.isPanning = true;
+      camera.startPanX = e.clientX - camera.x;
+      camera.startPanY = e.clientY - camera.y;
+    } else if (e.button === 0) {
+      if (currentTool === 'draw') {
+        isDrawing = true;
+        currentPath = [worldPos];
+        gameState.drawings.push(currentPath);
+      } else if (currentTool === 'select') {
+        for (let i = gameState.tokens.length - 1; i >= 0; i--) {
+          const t = gameState.tokens[i];
+          if (Math.hypot(t.x - worldPos.x, t.y - worldPos.y) <= (t.size * gameState.cellSize) / 2) {
+            draggedToken = t;
+            break;
+          }
         }
       }
-      if (!draggedToken) {
-        camera.isPanning = true;
-        camera.startPanX = touch.clientX - camera.x;
-        camera.startPanY = touch.clientY - camera.y;
-      }
-    } else if (currentTool === 'draw') {
-      isDrawing = true;
-      currentPath = [worldPos];
-      gameState.drawings.push(currentPath);
     }
-  } else if (e.touches.length === 2) {
-    clearTimeout(pressTimer);
-    camera.isPanning = false;
-    draggedToken = null;
-    isDrawing = false;
-    initialPinchDistance = Math.hypot(
-      e.touches[0].clientX - e.touches[1].clientX,
-      e.touches[0].clientY - e.touches[1].clientY
-    );
-  }
-}, { passive: false });
+  });
 
-wrapper.addEventListener('touchmove', (e) => {
-  clearTimeout(pressTimer); // Cancela o menu se arrastar o dedo
-
-  if (e.touches.length === 1) {
-    const touch = e.touches[0];
-    const worldPos = screenToWorld(touch.clientX, touch.clientY);
-
+  wrapper.addEventListener('mousemove', (e) => {
+    const worldPos = screenToWorld(e.clientX, e.clientY);
     if (camera.isPanning) {
-      camera.x = touch.clientX - camera.startPanX;
-      camera.y = touch.clientY - camera.startPanY;
+      camera.x = e.clientX - camera.startPanX;
+      camera.y = e.clientY - camera.startPanY;
       render();
     } else if (draggedToken) {
       draggedToken.x = worldPos.x;
@@ -437,123 +579,70 @@ wrapper.addEventListener('touchmove', (e) => {
       currentPath.push(worldPos);
       render();
     }
-  } else if (e.touches.length === 2 && initialPinchDistance) {
-    const currentDistance = Math.hypot(
-      e.touches[0].clientX - e.touches[1].clientX,
-      e.touches[0].clientY - e.touches[1].clientY
-    );
-    const zoomFactor = currentDistance / initialPinchDistance;
-    camera.zoom *= zoomFactor > 1 ? 1.03 : 0.97;
-    initialPinchDistance = currentDistance;
-    render();
-  }
-}, { passive: false });
+  });
 
-wrapper.addEventListener('touchend', () => {
-  clearTimeout(pressTimer);
-
-  if (draggedToken) {
-    draggedToken.x = snapToGrid(draggedToken.x, draggedToken.size);
-    draggedToken.y = snapToGrid(draggedToken.y, draggedToken.size);
-    draggedToken = null;
-    syncGameState();
-    render();
-  }
-  if (isDrawing) {
-    syncGameState();
-  }
-  camera.isPanning = false;
-  isDrawing = false;
-  initialPinchDistance = null;
-});
-
-// --- EVENTOS DE MOUSE (DESKTOP) ---
-wrapper.addEventListener('mousedown', (e) => {
-  if (e.button !== 2) hideContextMenu();
-
-  const worldPos = screenToWorld(e.clientX, e.clientY);
-  if (e.button === 1 || (e.button === 0 && e.shiftKey)) {
-    camera.isPanning = true;
-    camera.startPanX = e.clientX - camera.x;
-    camera.startPanY = e.clientY - camera.y;
-  } else if (e.button === 0) {
-    if (currentTool === 'draw') {
-      isDrawing = true;
-      currentPath = [worldPos];
-      gameState.drawings.push(currentPath);
-    } else if (currentTool === 'select') {
-      for (let i = gameState.tokens.length - 1; i >= 0; i--) {
-        const t = gameState.tokens[i];
-        if (Math.hypot(t.x - worldPos.x, t.y - worldPos.y) <= (t.size * gameState.cellSize) / 2) {
-          draggedToken = t;
-          break;
-        }
-      }
+  wrapper.addEventListener('mouseup', () => {
+    if (draggedToken) {
+      draggedToken.x = snapToGrid(draggedToken.x, draggedToken.size);
+      draggedToken.y = snapToGrid(draggedToken.y, draggedToken.size);
+      draggedToken = null;
+      syncGameState();
+      render();
     }
-  }
-});
+    if (isDrawing) {
+      syncGameState();
+    }
+    camera.isPanning = false;
+    isDrawing = false;
+  });
 
-wrapper.addEventListener('mousemove', (e) => {
-  const worldPos = screenToWorld(e.clientX, e.clientY);
-  if (camera.isPanning) {
-    camera.x = e.clientX - camera.startPanX;
-    camera.y = e.clientY - camera.startPanY;
+  wrapper.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    camera.zoom *= e.deltaY < 0 ? 1.1 : 0.9;
     render();
-  } else if (draggedToken) {
-    draggedToken.x = worldPos.x;
-    draggedToken.y = worldPos.y;
-    render();
-  } else if (isDrawing && currentPath) {
-    currentPath.push(worldPos);
-    render();
-  }
-});
+  }, { passive: false });
+}
 
-wrapper.addEventListener('mouseup', () => {
-  if (draggedToken) {
-    draggedToken.x = snapToGrid(draggedToken.x, draggedToken.size);
-    draggedToken.y = snapToGrid(draggedToken.y, draggedToken.size);
-    draggedToken = null;
+// ==========================================
+// 10. CONTROLES DE INTERFACE E CRIAÇÃO
+// ==========================================
+const btnZoomIn = document.getElementById('btn-zoom-in');
+const btnZoomOut = document.getElementById('btn-zoom-out');
+const btnZoomReset = document.getElementById('btn-zoom-reset');
+
+if (btnZoomIn) btnZoomIn.onclick = () => { camera.zoom *= 1.2; render(); };
+if (btnZoomOut) btnZoomOut.onclick = () => { camera.zoom /= 1.2; render(); };
+if (btnZoomReset) btnZoomReset.onclick = () => { camera.zoom = 1; camera.x = 0; camera.y = 0; render(); };
+
+const toolSelect = document.getElementById('tool-select');
+const toolDraw = document.getElementById('tool-draw');
+
+if (toolSelect) {
+  toolSelect.onclick = (e) => {
+    currentTool = 'select';
+    document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+    e.target.classList.add('active');
+  };
+}
+
+if (toolDraw) {
+  toolDraw.onclick = (e) => {
+    currentTool = 'draw';
+    document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+    e.target.classList.add('active');
+  };
+}
+
+const btnClearDrawings = document.getElementById('btn-clear-drawings');
+if (btnClearDrawings) {
+  btnClearDrawings.onclick = () => {
+    gameState.drawings = [];
     syncGameState();
     render();
-  }
-  if (isDrawing) {
-    syncGameState();
-  }
-  camera.isPanning = false;
-  isDrawing = false;
-});
+  };
+}
 
-wrapper.addEventListener('wheel', (e) => {
-  e.preventDefault();
-  camera.zoom *= e.deltaY < 0 ? 1.1 : 0.9;
-  render();
-}, { passive: false });
-
-// --- CONTROLES DE ZOOM E FERRAMENTAS ---
-document.getElementById('btn-zoom-in').onclick = () => { camera.zoom *= 1.2; render(); };
-document.getElementById('btn-zoom-out').onclick = () => { camera.zoom /= 1.2; render(); };
-document.getElementById('btn-zoom-reset').onclick = () => { camera.zoom = 1; camera.x = 0; camera.y = 0; render(); };
-
-document.getElementById('tool-select').onclick = (e) => {
-  currentTool = 'select';
-  document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
-  e.target.classList.add('active');
-};
-
-document.getElementById('tool-draw').onclick = (e) => {
-  currentTool = 'draw';
-  document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
-  e.target.classList.add('active');
-};
-
-document.getElementById('btn-clear-drawings').onclick = () => {
-  gameState.drawings = [];
-  syncGameState();
-  render();
-};
-
-// --- CARREGAMENTO DO MAPA DE FUNDO ---
+// Carregamento do Mapa de Fundo
 function loadBgImageFromUrl(dataUrl) {
   const img = new Image();
   img.onload = () => {
@@ -564,81 +653,94 @@ function loadBgImageFromUrl(dataUrl) {
   img.src = dataUrl;
 }
 
-document.getElementById('input-bg-image').addEventListener('change', (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
+const inputBgImage = document.getElementById('input-bg-image');
+if (inputBgImage) {
+  inputBgImage.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
 
-  const reader = new FileReader();
-  reader.onload = (event) => {
-    const dataUrl = event.target.result;
-    loadBgImageFromUrl(dataUrl);
-    syncGameState();
-  };
-  reader.readAsDataURL(file);
-});
-
-document.getElementById('btn-remove-bg').onclick = () => {
-  gameState.bgImage = null;
-  gameState.bgImageDataUrl = null;
-  document.getElementById('input-bg-image').value = '';
-  syncGameState();
-  render();
-};
-
-document.getElementById('input-grid-size').addEventListener('change', (e) => {
-  gameState.gridSize = parseInt(e.target.value) || 20;
-  syncGameState();
-  render();
-});
-
-// --- CRIAÇÃO DE TOKEN COM IMAGEM ---
-document.getElementById('btn-add-token').onclick = () => {
-  const nameInput = document.getElementById('token-name');
-  const name = nameInput.value.trim() || 'Token';
-  const color = document.getElementById('token-color').value;
-  const size = parseInt(document.getElementById('token-size').value) || 1;
-  const imageInput = document.getElementById('token-image');
-  const file = imageInput.files[0];
-
-  const createToken = (dataUrl = null) => {
-    const newToken = {
-      id: Date.now(),
-      name: name,
-      color: color,
-      size: size,
-      imageDataUrl: dataUrl,
-      imageObj: null,
-      x: snapToGrid(gameState.cellSize, size),
-      y: snapToGrid(gameState.cellSize, size)
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const dataUrl = event.target.result;
+      loadBgImageFromUrl(dataUrl);
+      syncGameState();
     };
+    reader.readAsDataURL(file);
+  });
+}
 
-    gameState.tokens.push(newToken);
-    nameInput.value = '';
-    imageInput.value = '';
+const btnRemoveBg = document.getElementById('btn-remove-bg');
+if (btnRemoveBg) {
+  btnRemoveBg.onclick = () => {
+    gameState.bgImage = null;
+    gameState.bgImageDataUrl = null;
+    if (inputBgImage) inputBgImage.value = '';
     syncGameState();
     render();
   };
+}
 
-  if (file) {
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      createToken(event.target.result);
+const inputGridSize = document.getElementById('input-grid-size');
+if (inputGridSize) {
+  inputGridSize.addEventListener('change', (e) => {
+    gameState.gridSize = parseInt(e.target.value) || 20;
+    syncGameState();
+    render();
+  });
+}
+
+// Criar novo token
+const btnAddToken = document.getElementById('btn-add-token');
+if (btnAddToken) {
+  btnAddToken.onclick = () => {
+    const nameInput = document.getElementById('token-name');
+    const name = nameInput.value.trim() || 'Token';
+    const color = document.getElementById('token-color').value;
+    const size = parseInt(document.getElementById('token-size').value) || 1;
+    const imageInput = document.getElementById('token-image');
+    const file = imageInput.files[0];
+
+    const createToken = (dataUrl = null) => {
+      const newToken = {
+        id: Date.now(),
+        name: name,
+        color: color,
+        size: size,
+        imageDataUrl: dataUrl,
+        imageObj: null,
+        x: snapToGrid(gameState.cellSize, size),
+        y: snapToGrid(gameState.cellSize, size)
+      };
+
+      gameState.tokens.push(newToken);
+      nameInput.value = '';
+      imageInput.value = '';
+      syncGameState();
+      render();
     };
-    reader.readAsDataURL(file);
-  } else {
-    createToken(null);
-  }
-};
 
-// --- ROLADOR DE DADOS ---
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        createToken(event.target.result);
+      };
+      reader.readAsDataURL(file);
+    } else {
+      createToken(null);
+    }
+  };
+}
+
+// Rolador de Dados
 document.querySelectorAll('.dice-btn').forEach(btn => {
   btn.onclick = () => {
     const faces = parseInt(btn.dataset.dice);
     const result = Math.floor(Math.random() * faces) + 1;
     const log = document.getElementById('dice-log');
     
-    // Exibe o nome do jogador, o tipo do dado e o resultado obtido
-    log.innerHTML = `<div>🎲 <strong>${currentUserName}</strong> rolou <strong>d${faces}</strong>: <strong>${result}</strong></div>` + log.innerHTML;
+    if (log) {
+      log.innerHTML = `<div>🎲 <strong>${currentUserName}</strong> rolou <strong>d${faces}</strong>: <strong>${result}</strong></div>` + log.innerHTML;
+    }
   };
 });
 
