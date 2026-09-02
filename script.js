@@ -2,14 +2,18 @@
 // 1. CONFIGURAÇÃO DO FIREBASE
 // ==========================================
 const firebaseConfig = {
-  apiKey: "SEU_API_KEY",
-  authDomain: "SEU_PROJETO.firebaseapp.com",
-  databaseURL: "https://SEU_PROJETO-default-rtdb.firebaseio.com",
-  projectId: "SEU_PROJETO",
-  storageBucket: "SEU_PROJETO.appspot.com",
-  messagingSenderId: "SEU_SENDER_ID",
-  appId: "SEU_APP_ID"
+  apiKey: "AIzaSyBtnSIxy1F7di5_PdggW5RAh7EsBuIyXwc",
+  authDomain: "dreylly-tabuleiro.firebaseapp.com",
+  projectId: "dreylly-tabuleiro",
+  storageBucket: "dreylly-tabuleiro.firebasestorage.app",
+  messagingSenderId: "884357013795",
+  appId: "1:884357013795:web:5b1deb7634c1fdb58bac96",
+  databaseURL: "https://dreylly-tabuleiro-default-rtdb.firebaseio.com" // Necessário para o Realtime Database
 };
+
+// Inicializa o Firebase e a referência do banco de dados
+//firebase.initializeApp(firebaseConfig);
+//const database = firebase.database();
 
 let database = null;
 if (typeof firebase !== 'undefined') {
