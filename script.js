@@ -1,5 +1,5 @@
 // ==========================================
-// 1. CONFIGURAÇÃO DO FIREBASE
+// 1. CONFIGURAÇÃO E SISTEMA SPA
 // ==========================================
 const firebaseConfig = {
   apiKey: "AIzaSyBtnSIxy1F7di5_PdggW5RAh7EsBuIyXwc",
@@ -11,10 +11,6 @@ const firebaseConfig = {
   databaseURL: "https://dreylly-tabuleiro-default-rtdb.firebaseio.com" // Necessário para o Realtime Database
 };
 
-// Inicializa o Firebase e a referência do banco de dados
-//firebase.initializeApp(firebaseConfig);
-//const database = firebase.database();
-
 let database = null;
 if (typeof firebase !== 'undefined') {
   try {
@@ -25,136 +21,133 @@ if (typeof firebase !== 'undefined') {
   }
 }
 
-// VARIÁVEIS DE REDE E SALA
 let currentRoomRef = null;
 let currentUserRef = null;
 let currentUserId = 'user_' + Math.random().toString(36).substr(2, 9);
 let currentUserName = 'Jogador';
 
-// ==========================================
-// 2. ESTADO DO JOGO E CÂMERA
-// ==========================================
-const gameState = {
-  gridSize: 20,
-  cellSize: 50,
-  bgImage: null,
-  bgImageDataUrl: null,
-  tokens: [],
-  drawings: []
-};
+let mockRooms = [
+  { id: "sala-1", name: "Mestres do Xadrez", status: "Aguardando jogadores", playersCount: 1, maxPlayers: 2, type: "waiting" },
+  { id: "sala-2", name: "Estratégia Avançada", status: "Em andamento", playersCount: 4, maxPlayers: 4, type: "progress" },
+  { id: "sala-3", name: "Mesa Casual #12", status: "Aguardando jogadores", playersCount: 3, maxPlayers: 4, type: "waiting" }
+];
 
-const camera = {
-  x: 0,
-  y: 0,
-  zoom: 1,
-  isPanning: false,
-  startPanX: 0,
-  startPanY: 0
-};
-
-let currentTool = 'select';
-let isDrawing = false;
-let currentPath = null;
-let draggedToken = null;
-let initialPinchDistance = null;
-
-// VARIÁVEIS DE MODAL E MENU CONTEXTUAL
-let selectedTokenForMenu = null;
-let pressTimer = null;
-let tempImageDataUrl = null;
-
-// ELEMENTOS DA INTERFACE
-const canvas = document.getElementById('vtt-canvas');
-const ctx = canvas.getContext('2d');
-const wrapper = document.getElementById('canvas-wrapper');
-
-const contextMenu = document.getElementById('token-context-menu');
-const modalOverlay = document.getElementById('token-modal-overlay');
-
-const modalInputName = document.getElementById('modal-input-name');
-const modalInputColor = document.getElementById('modal-input-color');
-const modalInputSize = document.getElementById('modal-input-size');
-const modalInputImage = document.getElementById('modal-input-image');
-const modalPreview = document.getElementById('modal-token-preview');
-const modalPreviewName = document.getElementById('modal-preview-name');
-
-// ==========================================
-// 3. AUXILIARES DE CANVAS E CÁLCULOS
-// ==========================================
-function resizeCanvas() {
-  if (wrapper && canvas) {
-    canvas.width = wrapper.clientWidth;
-    canvas.height = wrapper.clientHeight;
-    render();
-  }
-}
-window.addEventListener('resize', resizeCanvas);
-
-function screenToWorld(screenX, screenY) {
-  const rect = canvas.getBoundingClientRect();
-  const x = (screenX - rect.left - camera.x) / camera.zoom;
-  const y = (screenY - rect.top - camera.y) / camera.zoom;
-  return { x, y };
-}
-
-function snapToGrid(coord, sizeInCells = 1) {
-  const cellCenterOffset = (sizeInCells * gameState.cellSize) / 2;
-  return Math.floor(coord / gameState.cellSize) * gameState.cellSize + cellCenterOffset;
-}
-
-// ==========================================
-// 4. SIDEBAR MOBILE
-// ==========================================
-const sidebar = document.getElementById('sidebar');
-const overlay = document.getElementById('sidebar-overlay');
-const btnToggle = document.getElementById('btn-toggle-sidebar');
-const btnClose = document.getElementById('btn-close-sidebar');
-
-function toggleSidebar() {
-  if (sidebar && overlay) {
-    sidebar.classList.toggle('open');
-    overlay.classList.toggle('active');
-  }
-}
-
-if (btnToggle) btnToggle.addEventListener('click', toggleSidebar);
-if (btnClose) btnClose.addEventListener('click', toggleSidebar);
-if (overlay) overlay.addEventListener('click', toggleSidebar);
-
-// ==========================================
-// 5. CONEXÃO E SINCRONIZAÇÃO EM TEMPO REAL
-// ==========================================
-const btnConnect = document.getElementById('btn-connect-room');
-if (btnConnect) {
-  btnConnect.onclick = () => {
-    if (!database) {
-      alert("Firebase não está configurado!");
-      return;
+function navigateTo(screenId) {
+  const screens = document.querySelectorAll('.screen');
+  screens.forEach(s => s.classList.remove('active'));
+  setTimeout(() => {
+    const target = document.getElementById(screenId);
+    if (target) {
+      target.classList.add('active');
+      if (screenId === 'screen-board') {
+        resizeCanvas();
+      }
     }
+  }, 50);
+}
 
-    const usernameInput = document.getElementById('input-username');
-    const roomInput = document.getElementById('input-room-id');
+// ==========================================
+// 2. TELA DE LOGIN E NAVEGAÇÃO
+// ==========================================
+const loginForm = document.getElementById('login-form');
+if (loginForm) {
+  loginForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const name = document.getElementById('input-username').value.trim();
+    const email = document.getElementById('input-email').value.trim();
+    const pass = document.getElementById('input-password').value.trim();
 
-    const name = usernameInput.value.trim();
-    const roomId = roomInput.value.trim();
-
-    if (!name || !roomId) {
-      alert("Por favor, preencha seu Nome e o Código da Sala.");
-      return;
+    if (name && email && pass) {
+      currentUserName = name;
+      renderRooms(mockRooms);
+      navigateTo('screen-rooms');
+    } else {
+      alert("Por favor, preencha todos os campos.");
     }
+  });
+}
 
-    currentUserName = name;
+// ==========================================
+// 3. TELA DE PESQUISA E CRIAÇÃO DE SALAS
+// ==========================================
+function renderRooms(rooms) {
+  const roomList = document.getElementById('room-list');
+  if (!roomList) return;
+  roomList.innerHTML = '';
+
+  rooms.forEach(room => {
+    const li = document.createElement('li');
+    li.className = 'room-item';
+    const badgeClass = room.type === 'waiting' ? 'badge-waiting' : 'badge-progress';
+
+    li.innerHTML = `
+      <div class="room-info">
+        <h3>${room.name}</h3>
+        <div class="room-details">
+          <span class="badge ${badgeClass}">${room.status}</span> | Jogadores: ${room.playersCount}/${room.maxPlayers}
+        </div>
+      </div>
+      <button class="btn-primary" onclick="connectToRoom('${room.id}', '${room.name}')">Entrar na Sala</button>
+    `;
+    roomList.appendChild(li);
+  });
+}
+
+// Criar nova sala
+const createRoomForm = document.getElementById('create-room-form');
+if (createRoomForm) {
+  createRoomForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const nameInput = document.getElementById('create-room-name');
+    const maxInput = document.getElementById('create-room-max');
+    const statusSelect = document.getElementById('create-room-status');
+
+    const name = nameInput.value.trim();
+    const maxPlayers = parseInt(maxInput.value) || 4;
+    const type = statusSelect.value;
+    const statusText = type === 'waiting' ? 'Aguardando jogadores' : 'Em andamento';
+
+    if (!name) return;
+
+    const newRoom = {
+      id: 'sala-' + Date.now(),
+      name: name,
+      status: statusText,
+      playersCount: 1,
+      maxPlayers: maxPlayers,
+      type: type
+    };
+
+    mockRooms.unshift(newRoom);
+    renderRooms(mockRooms);
+    nameInput.value = '';
     
-    if (currentUserRef) currentUserRef.remove();
+    // Entra direto na sala criada
+    connectToRoom(newRoom.id, newRoom.name);
+  });
+}
 
+// Filtro de Busca
+const searchInput = document.getElementById('search-input');
+if (searchInput) {
+  searchInput.addEventListener('input', (e) => {
+    const query = e.target.value.toLowerCase();
+    const filtered = mockRooms.filter(r => r.name.toLowerCase().includes(query));
+    renderRooms(filtered);
+  });
+}
+
+function connectToRoom(roomId, roomName) {
+  document.getElementById('current-room-title').textContent = roomName;
+  
+  if (database) {
+    if (currentUserRef) currentUserRef.remove();
     currentRoomRef = database.ref('rooms/' + roomId);
     currentUserRef = currentRoomRef.child('users/' + currentUserId);
-
     currentUserRef.set({
       name: currentUserName,
       joinedAt: firebase.database.ServerValue.TIMESTAMP
     });
-
     currentUserRef.onDisconnect().remove();
 
     currentRoomRef.child('users').on('value', (snapshot) => {
@@ -173,15 +166,99 @@ if (btnConnect) {
         render();
       }
     });
+  } else {
+    updatePlayersList({ [currentUserId]: { name: currentUserName } });
+  }
 
-    alert(`Conectado à sala "${roomId}" como "${currentUserName}"!`);
+  navigateTo('screen-board');
+}
+
+const btnLeaveRoom = document.getElementById('btn-leave-room');
+if (btnLeaveRoom) {
+  btnLeaveRoom.onclick = () => {
+    if (currentUserRef) currentUserRef.remove();
+    navigateTo('screen-rooms');
   };
 }
+
+// ==========================================
+// 4. ESTADO DO JOGO, CÂMERA E CANVAS
+// ==========================================
+const gameState = {
+  gridSize: 20,
+  cellSize: 50,
+  bgImage: null,
+  bgImageDataUrl: null,
+  tokens: [],
+  drawings: []
+};
+
+const camera = { x: 0, y: 0, zoom: 1, isPanning: false, startPanX: 0, startPanY: 0 };
+let currentTool = 'select';
+let isDrawing = false;
+let currentPath = null;
+let draggedToken = null;
+let initialPinchDistance = null;
+
+let selectedTokenForMenu = null;
+let pressTimer = null;
+let tempImageDataUrl = null;
+
+const canvas = document.getElementById('vtt-canvas');
+const ctx = canvas ? canvas.getContext('2d') : null;
+const wrapper = document.getElementById('canvas-wrapper');
+const contextMenu = document.getElementById('token-context-menu');
+const modalOverlay = document.getElementById('token-modal-overlay');
+const modalInputName = document.getElementById('modal-input-name');
+const modalInputColor = document.getElementById('modal-input-color');
+const modalInputSize = document.getElementById('modal-input-size');
+const modalInputImage = document.getElementById('modal-input-image');
+const modalPreview = document.getElementById('modal-token-preview');
+const modalPreviewName = document.getElementById('modal-preview-name');
+
+function resizeCanvas() {
+  if (wrapper && canvas) {
+    canvas.width = wrapper.clientWidth;
+    canvas.height = wrapper.clientHeight;
+    render();
+  }
+}
+window.addEventListener('resize', resizeCanvas);
+
+function screenToWorld(screenX, screenY) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: (screenX - rect.left - camera.x) / camera.zoom,
+    y: (screenY - rect.top - camera.y) / camera.zoom
+  };
+}
+
+function snapToGrid(coord, sizeInCells = 1) {
+  const cellCenterOffset = (sizeInCells * gameState.cellSize) / 2;
+  return Math.floor(coord / gameState.cellSize) * gameState.cellSize + cellCenterOffset;
+}
+
+// ==========================================
+// 5. SIDEBAR MOBILE
+// ==========================================
+const sidebar = document.getElementById('sidebar');
+const overlay = document.getElementById('sidebar-overlay');
+const btnToggle = document.getElementById('btn-toggle-sidebar');
+const btnClose = document.getElementById('btn-close-sidebar');
+
+function toggleSidebar() {
+  if (sidebar && overlay) {
+    sidebar.classList.toggle('open');
+    overlay.classList.toggle('active');
+  }
+}
+if (btnToggle) btnToggle.addEventListener('click', toggleSidebar);
+if (btnClose) btnClose.addEventListener('click', toggleSidebar);
+if (overlay) overlay.addEventListener('click', toggleSidebar);
 
 function updatePlayersList(users) {
   const container = document.getElementById('online-players-list');
   if (!container) return;
-
   container.innerHTML = '';
   Object.keys(users).forEach(id => {
     const user = users[id];
@@ -196,13 +273,8 @@ function syncGameState() {
   if (currentRoomRef) {
     currentRoomRef.child('state').set({
       tokens: gameState.tokens.map(t => ({
-        id: t.id,
-        name: t.name,
-        color: t.color,
-        size: t.size,
-        imageDataUrl: t.imageDataUrl || null,
-        x: t.x,
-        y: t.y
+        id: t.id, name: t.name, color: t.color, size: t.size,
+        imageDataUrl: t.imageDataUrl || null, x: t.x, y: t.y
       })),
       drawings: gameState.drawings,
       gridSize: gameState.gridSize,
@@ -216,17 +288,14 @@ function syncGameState() {
 // ==========================================
 function render() {
   if (!ctx || !canvas) return;
-
   ctx.save();
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.translate(camera.x, camera.y);
   ctx.scale(camera.zoom, camera.zoom);
-
   drawMapBackground();
   drawGrid();
   drawDrawings();
   drawTokens();
-
   ctx.restore();
 }
 
@@ -264,23 +333,19 @@ function drawTokens() {
   gameState.tokens.forEach(token => {
     const radius = (token.size * gameState.cellSize) / 2 - 2;
     ctx.save();
-
     if (token.imageDataUrl) {
       if (!token.imageObj) {
         token.imageObj = new Image();
         token.imageObj.onload = () => render();
         token.imageObj.src = token.imageDataUrl;
       }
-
       ctx.beginPath();
       ctx.arc(token.x, token.y, radius, 0, Math.PI * 2);
       ctx.clip();
-
       if (token.imageObj.complete && token.imageObj.naturalWidth !== 0) {
         ctx.drawImage(token.imageObj, token.x - radius, token.y - radius, radius * 2, radius * 2);
       }
       ctx.restore();
-
       ctx.beginPath();
       ctx.arc(token.x, token.y, radius, 0, Math.PI * 2);
       ctx.strokeStyle = token.color;
@@ -293,7 +358,6 @@ function drawTokens() {
       ctx.fill();
       ctx.restore();
     }
-
     ctx.fillStyle = '#ffffff';
     ctx.font = 'bold 12px sans-serif';
     ctx.textAlign = 'center';
@@ -309,12 +373,8 @@ function drawTokens() {
 function showContextMenu(screenX, screenY, token) {
   selectedTokenForMenu = token;
   if (!contextMenu) return;
-
-  const mouseX = Math.min(screenX, window.innerWidth - 170);
-  const mouseY = Math.min(screenY, window.innerHeight - 100);
-
-  contextMenu.style.left = `${mouseX}px`;
-  contextMenu.style.top = `${mouseY}px`;
+  contextMenu.style.left = `${Math.min(screenX, window.innerWidth - 170)}px`;
+  contextMenu.style.top = `${Math.min(screenY, window.innerHeight - 100)}px`;
   contextMenu.style.display = 'block';
 }
 
@@ -324,15 +384,12 @@ function hideContextMenu() {
 
 function openTokenModal() {
   if (!selectedTokenForMenu || !modalOverlay) return;
-
   hideContextMenu();
   tempImageDataUrl = selectedTokenForMenu.imageDataUrl || null;
-
   modalInputName.value = selectedTokenForMenu.name;
   modalInputColor.value = selectedTokenForMenu.color;
   modalInputSize.value = selectedTokenForMenu.size;
   modalInputImage.value = '';
-
   updateModalPreview();
   modalOverlay.style.display = 'flex';
 }
@@ -345,10 +402,8 @@ function closeTokenModal() {
 
 function updateModalPreview() {
   if (!modalPreview) return;
-
   modalPreviewName.textContent = modalInputName.value || 'Token';
   modalPreview.style.borderColor = modalInputColor.value;
-
   if (tempImageDataUrl) {
     modalPreview.style.backgroundImage = `url(${tempImageDataUrl})`;
     modalPreview.style.backgroundColor = 'transparent';
@@ -358,10 +413,8 @@ function updateModalPreview() {
   }
 }
 
-// Eventos de pré-visualização do Modal
 if (modalInputName) modalInputName.addEventListener('input', updateModalPreview);
 if (modalInputColor) modalInputColor.addEventListener('input', updateModalPreview);
-
 if (modalInputImage) {
   modalInputImage.addEventListener('change', (e) => {
     const file = e.target.files[0];
@@ -376,35 +429,28 @@ if (modalInputImage) {
   });
 }
 
-// Salvar dados editados no Modal
 const btnSaveModal = document.getElementById('modal-save-btn');
 if (btnSaveModal) {
   btnSaveModal.onclick = () => {
     if (!selectedTokenForMenu) return;
-
     selectedTokenForMenu.name = modalInputName.value.trim() || 'Token';
     selectedTokenForMenu.color = modalInputColor.value;
     selectedTokenForMenu.size = parseInt(modalInputSize.value) || 1;
-
     if (tempImageDataUrl !== selectedTokenForMenu.imageDataUrl) {
       selectedTokenForMenu.imageDataUrl = tempImageDataUrl;
       selectedTokenForMenu.imageObj = null;
     }
-
     syncGameState();
     render();
     closeTokenModal();
   };
 }
 
-// Eventos dos botões do Menu Contextual e Fechar
 const btnCtxOpenModal = document.getElementById('ctx-open-modal');
 const btnModalClose = document.getElementById('modal-close-btn');
 const btnCtxDelete = document.getElementById('ctx-delete');
-
 if (btnCtxOpenModal) btnCtxOpenModal.onclick = openTokenModal;
 if (btnModalClose) btnModalClose.onclick = closeTokenModal;
-
 if (btnCtxDelete) {
   btnCtxDelete.onclick = () => {
     if (!selectedTokenForMenu) return;
@@ -418,21 +464,16 @@ if (btnCtxDelete) {
 }
 
 document.addEventListener('click', (e) => {
-  if (contextMenu && !contextMenu.contains(e.target)) {
-    hideContextMenu();
-  }
+  if (contextMenu && !contextMenu.contains(e.target)) hideContextMenu();
 });
 
-// Clique com botão direito no Canvas
 if (wrapper) {
   wrapper.addEventListener('contextmenu', (e) => {
     e.preventDefault();
     const worldPos = screenToWorld(e.clientX, e.clientY);
-
     for (let i = gameState.tokens.length - 1; i >= 0; i--) {
       const t = gameState.tokens[i];
-      const radius = (t.size * gameState.cellSize) / 2;
-      if (Math.hypot(t.x - worldPos.x, t.y - worldPos.y) <= radius) {
+      if (Math.hypot(t.x - worldPos.x, t.y - worldPos.y) <= (t.size * gameState.cellSize) / 2) {
         showContextMenu(e.clientX, e.clientY, t);
         return;
       }
@@ -442,29 +483,24 @@ if (wrapper) {
 }
 
 // ==========================================
-// 8. EVENTOS DE TOQUE (TOUCH/MOBILE)
+// 8. EVENTOS DE INTERAÇÃO (MOUSE E TOUCH)
 // ==========================================
 if (wrapper) {
+  // Touch
   wrapper.addEventListener('touchstart', (e) => {
     hideContextMenu();
-
     if (e.touches.length === 1) {
       const touch = e.touches[0];
       const worldPos = screenToWorld(touch.clientX, touch.clientY);
-
       if (currentTool === 'select') {
         for (let i = gameState.tokens.length - 1; i >= 0; i--) {
           const t = gameState.tokens[i];
-          const radius = (t.size * gameState.cellSize) / 2;
-          if (Math.hypot(t.x - worldPos.x, t.y - worldPos.y) <= radius) {
+          if (Math.hypot(t.x - worldPos.x, t.y - worldPos.y) <= (t.size * gameState.cellSize) / 2) {
             draggedToken = t;
-            
-            // Pressionar e segurar por 500ms abre o menu de edição
             pressTimer = setTimeout(() => {
               draggedToken = null;
               showContextMenu(touch.clientX, touch.clientY, t);
             }, 500);
-
             break;
           }
         }
@@ -480,9 +516,7 @@ if (wrapper) {
       }
     } else if (e.touches.length === 2) {
       clearTimeout(pressTimer);
-      camera.isPanning = false;
-      draggedToken = null;
-      isDrawing = false;
+      camera.isPanning = false; draggedToken = null; isDrawing = false;
       initialPinchDistance = Math.hypot(
         e.touches[0].clientX - e.touches[1].clientX,
         e.touches[0].clientY - e.touches[1].clientY
@@ -492,11 +526,9 @@ if (wrapper) {
 
   wrapper.addEventListener('touchmove', (e) => {
     clearTimeout(pressTimer);
-
     if (e.touches.length === 1) {
       const touch = e.touches[0];
       const worldPos = screenToWorld(touch.clientX, touch.clientY);
-
       if (camera.isPanning) {
         camera.x = touch.clientX - camera.startPanX;
         camera.y = touch.clientY - camera.startPanY;
@@ -514,8 +546,7 @@ if (wrapper) {
         e.touches[0].clientX - e.touches[1].clientX,
         e.touches[0].clientY - e.touches[1].clientY
       );
-      const zoomFactor = currentDistance / initialPinchDistance;
-      camera.zoom *= zoomFactor > 1 ? 1.03 : 0.97;
+      camera.zoom *= (currentDistance / initialPinchDistance) > 1 ? 1.03 : 0.97;
       initialPinchDistance = currentDistance;
       render();
     }
@@ -523,7 +554,6 @@ if (wrapper) {
 
   wrapper.addEventListener('touchend', () => {
     clearTimeout(pressTimer);
-
     if (draggedToken) {
       draggedToken.x = snapToGrid(draggedToken.x, draggedToken.size);
       draggedToken.y = snapToGrid(draggedToken.y, draggedToken.size);
@@ -531,22 +561,13 @@ if (wrapper) {
       syncGameState();
       render();
     }
-    if (isDrawing) {
-      syncGameState();
-    }
-    camera.isPanning = false;
-    isDrawing = false;
-    initialPinchDistance = null;
+    if (isDrawing) syncGameState();
+    camera.isPanning = false; isDrawing = false; initialPinchDistance = null;
   });
-}
 
-// ==========================================
-// 9. EVENTOS DE MOUSE (DESKTOP)
-// ==========================================
-if (wrapper) {
+  // Mouse
   wrapper.addEventListener('mousedown', (e) => {
     if (e.button !== 2) hideContextMenu();
-
     const worldPos = screenToWorld(e.clientX, e.clientY);
     if (e.button === 1 || (e.button === 0 && e.shiftKey)) {
       camera.isPanning = true;
@@ -593,11 +614,8 @@ if (wrapper) {
       syncGameState();
       render();
     }
-    if (isDrawing) {
-      syncGameState();
-    }
-    camera.isPanning = false;
-    isDrawing = false;
+    if (isDrawing) syncGameState();
+    camera.isPanning = false; isDrawing = false;
   });
 
   wrapper.addEventListener('wheel', (e) => {
@@ -608,19 +626,17 @@ if (wrapper) {
 }
 
 // ==========================================
-// 10. CONTROLES DE INTERFACE E CRIAÇÃO
+// 9. CONTROLES E FERRAMENTAS
 // ==========================================
 const btnZoomIn = document.getElementById('btn-zoom-in');
 const btnZoomOut = document.getElementById('btn-zoom-out');
 const btnZoomReset = document.getElementById('btn-zoom-reset');
-
 if (btnZoomIn) btnZoomIn.onclick = () => { camera.zoom *= 1.2; render(); };
 if (btnZoomOut) btnZoomOut.onclick = () => { camera.zoom /= 1.2; render(); };
 if (btnZoomReset) btnZoomReset.onclick = () => { camera.zoom = 1; camera.x = 0; camera.y = 0; render(); };
 
 const toolSelect = document.getElementById('tool-select');
 const toolDraw = document.getElementById('tool-draw');
-
 if (toolSelect) {
   toolSelect.onclick = (e) => {
     currentTool = 'select';
@@ -628,7 +644,6 @@ if (toolSelect) {
     e.target.classList.add('active');
   };
 }
-
 if (toolDraw) {
   toolDraw.onclick = (e) => {
     currentTool = 'draw';
@@ -646,7 +661,6 @@ if (btnClearDrawings) {
   };
 }
 
-// Carregamento do Mapa de Fundo
 function loadBgImageFromUrl(dataUrl) {
   const img = new Image();
   img.onload = () => {
@@ -662,11 +676,9 @@ if (inputBgImage) {
   inputBgImage.addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (!file) return;
-
     const reader = new FileReader();
     reader.onload = (event) => {
-      const dataUrl = event.target.result;
-      loadBgImageFromUrl(dataUrl);
+      loadBgImageFromUrl(event.target.result);
       syncGameState();
     };
     reader.readAsDataURL(file);
@@ -693,7 +705,6 @@ if (inputGridSize) {
   });
 }
 
-// Criar novo token
 const btnAddToken = document.getElementById('btn-add-token');
 if (btnAddToken) {
   btnAddToken.onclick = () => {
@@ -707,15 +718,12 @@ if (btnAddToken) {
     const createToken = (dataUrl = null) => {
       const newToken = {
         id: Date.now(),
-        name: name,
-        color: color,
-        size: size,
+        name, color, size,
         imageDataUrl: dataUrl,
         imageObj: null,
         x: snapToGrid(gameState.cellSize, size),
         y: snapToGrid(gameState.cellSize, size)
       };
-
       gameState.tokens.push(newToken);
       nameInput.value = '';
       imageInput.value = '';
@@ -725,9 +733,7 @@ if (btnAddToken) {
 
     if (file) {
       const reader = new FileReader();
-      reader.onload = (event) => {
-        createToken(event.target.result);
-      };
+      reader.onload = (event) => createToken(event.target.result);
       reader.readAsDataURL(file);
     } else {
       createToken(null);
@@ -735,18 +741,13 @@ if (btnAddToken) {
   };
 }
 
-// Rolador de Dados
 document.querySelectorAll('.dice-btn').forEach(btn => {
   btn.onclick = () => {
     const faces = parseInt(btn.dataset.dice);
     const result = Math.floor(Math.random() * faces) + 1;
     const log = document.getElementById('dice-log');
-    
     if (log) {
       log.innerHTML = `<div>🎲 <strong>${currentUserName}</strong> rolou <strong>d${faces}</strong>: <strong>${result}</strong></div>` + log.innerHTML;
     }
   };
 });
-
-// Inicialização
-resizeCanvas();
